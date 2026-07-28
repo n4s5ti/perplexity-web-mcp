@@ -422,6 +422,10 @@ failure, branch on the stable `code=` value rather than matching prose.
 | `PWM_QUERY_FAILED`               | Request failed                | Check auth/connectivity and retry |
 | `PWM_INTERNAL_ERROR`             | Unexpected CLI failure        | Run `pwm doctor`; report the code |
 
+For `PWM_INTERNAL_ERROR`, rerun with `PWM_DEBUG=1` only when traceback detail
+is required. Debug output can contain sensitive exception data; review and
+redact it before sharing.
+
 ## Common Patterns
 
 ### Thread Library & Conversation Resumption

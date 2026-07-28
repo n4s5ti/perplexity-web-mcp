@@ -65,6 +65,21 @@ class TestQueryCheckpoints:
         assert SECRET_QUERY not in result.stderr
         assert SECRET_TOKEN not in result.stderr
 
+    def test_internal_error_traceback_is_explicitly_opt_in(self) -> None:
+        with patch("perplexity_web_mcp.cli.main.ask", side_effect=RuntimeError(SECRET_TOKEN)):
+            result = CliRunner().invoke(
+                cli,
+                ["ask", SECRET_QUERY, "--model", "sonar"],
+                env={"PWM_DEBUG": "1"},
+            )
+
+        assert result.exit_code == 1
+        assert f"code={CliErrorCode.INTERNAL_ERROR.value}" in result.stderr
+        assert "debug=traceback warning=may-contain-sensitive-details" in result.stderr
+        assert "RuntimeError" in result.stderr
+        assert SECRET_TOKEN in result.stderr
+        assert SECRET_QUERY not in result.stderr
+
     def test_research_rate_limit_has_command_specific_failed_checkpoint(self) -> None:
         with patch("perplexity_web_mcp.cli.main.ask", side_effect=RateLimitError()):
             result = CliRunner().invoke(cli, ["research", SECRET_QUERY])

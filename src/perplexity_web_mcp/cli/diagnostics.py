@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+import os
 import sys
+import traceback
 from typing import NoReturn
 
 
@@ -128,6 +130,14 @@ def emit_error(code: CliErrorCode) -> None:
     sys.stderr.write(f"pwm: {detail.message} {detail.remedy}\n")
 
 
+def emit_debug_exception(error: Exception) -> None:
+    """Print opt-in traceback details; default diagnostics remain redacted."""
+    if os.environ.get("PWM_DEBUG", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        return
+    sys.stderr.write("pwm: debug=traceback warning=may-contain-sensitive-details\n")
+    traceback.print_exception(error, file=sys.stderr)
+
+
 def run_with_checkpoints(command: CliCommand, operation: Callable[[], int | None]) -> NoReturn:
     """Run a command, emit deterministic lifecycle checkpoints, and exit."""
     emit_checkpoint(command, CliCheckpoint.START)
@@ -136,8 +146,9 @@ def run_with_checkpoints(command: CliCommand, operation: Callable[[], int | None
         exit_code = 0 if result is None else result
     except SystemExit as error:
         exit_code = error.code if isinstance(error.code, int) else 1
-    except Exception:
+    except Exception as error:
         emit_error(CliErrorCode.INTERNAL_ERROR)
+        emit_debug_exception(error)
         emit_checkpoint(command, CliCheckpoint.FAILED, exit_code=1)
         raise SystemExit(1) from None
 

@@ -377,6 +377,10 @@ PWM_INTERNAL_ERROR             Unexpected CLI failure        pwm doctor; report 
 Click usage errors retain Click's exit code 2. Handled operational failures
 exit 1. Successful commands exit 0.
 
+For PWM_INTERNAL_ERROR only, rerun with PWM_DEBUG=1 to emit a Python
+traceback on stderr. This is explicitly opt-in because exception details can
+contain sensitive data. Review and redact debug output before sharing it.
+
 ================================================================================
 COMMON WORKFLOWS
 ================================================================================

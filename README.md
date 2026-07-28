@@ -262,6 +262,9 @@ pwm: event=error code=PWM_AUTH_FORBIDDEN retryable=0
 pwm: Perplexity returned 403: the saved session is forbidden. Sign in again, then run `pwm login --from-browser`.
 ```
 
+For an unexpected `PWM_INTERNAL_ERROR`, rerun with `PWM_DEBUG=1` to include a Python traceback on stderr.
+Debug tracebacks may contain sensitive exception details; review and redact them before sharing.
+
 Set `PWM_SAVE_TO_LIBRARY=1` to save shared CLI and MCP queries to the Perplexity thread library. Queries are
 incognito by default.
 

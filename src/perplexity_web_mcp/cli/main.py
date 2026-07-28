@@ -30,6 +30,7 @@ from perplexity_web_mcp.browser_token import SUPPORTED_BROWSERS
 from perplexity_web_mcp.cli.diagnostics import (
     CliCommand,
     CliErrorCode,
+    emit_debug_exception,
     emit_error,
     run_with_checkpoints,
 )
@@ -200,8 +201,9 @@ def _cmd_ask_impl(query, model_name, thinking, source, json_output, no_citations
     except PerplexityError:
         emit_error(CliErrorCode.QUERY_FAILED)
         return 1
-    except Exception:
+    except Exception as error:
         emit_error(CliErrorCode.INTERNAL_ERROR)
+        emit_debug_exception(error)
         return 1
 
     return 0
@@ -252,8 +254,9 @@ def _cmd_research_impl(query, source, json_output):
         error_code = CliErrorCode.QUERY_RATE_LIMITED
     except PerplexityError:
         error_code = CliErrorCode.QUERY_FAILED
-    except Exception:
+    except Exception as error:
         error_code = CliErrorCode.INTERNAL_ERROR
+        emit_debug_exception(error)
     else:
         error_code = None
 
@@ -583,8 +586,9 @@ def _cmd_council_impl(query, models_str, source, synthesize, json_output, thinki
     except PerplexityError:
         emit_error(CliErrorCode.QUERY_FAILED)
         return 1
-    except Exception:
+    except Exception as error:
         emit_error(CliErrorCode.INTERNAL_ERROR)
+        emit_debug_exception(error)
         return 1
 
     return 0
