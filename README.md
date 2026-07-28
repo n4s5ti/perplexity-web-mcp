@@ -242,6 +242,26 @@ Browser import validates the Perplexity account before saving. `--browser` defau
 `chrome`, `chromium`, `brave`, `edge`, `firefox`, `librewolf`, `opera`, `opera-gx`, and `vivaldi`.
 Use `--no-save` to validate a browser session without storing it.
 
+#### Checkpoints and error codes
+
+`login`, `ask`, `research`, and `council` emit fixed-field lifecycle checkpoints to stderr while keeping
+successful answers on stdout. Checkpoints contain only the command, phase, and exit code; they never include
+queries, email addresses, tokens, cookies, paths, or raw arguments.
+
+```text
+pwm: event=checkpoint command=ask phase=start
+pwm: event=checkpoint command=ask phase=complete exit=0
+```
+
+Handled failures include a stable `PWM_*` code, a retryability flag, and fixed remediation. Automation should
+branch on the code rather than matching prose. Authentication codes use `PWM_AUTH_*`, invalid inputs use
+`PWM_INPUT_*`, query failures use `PWM_QUERY_*`, and unexpected failures use `PWM_INTERNAL_ERROR`.
+
+```text
+pwm: event=error code=PWM_AUTH_FORBIDDEN retryable=0
+pwm: Perplexity returned 403: the saved session is forbidden. Sign in again, then run `pwm login --from-browser`.
+```
+
 Set `PWM_SAVE_TO_LIBRARY=1` to save shared CLI and MCP queries to the Perplexity thread library. Queries are
 incognito by default.
 

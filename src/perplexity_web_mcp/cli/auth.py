@@ -24,6 +24,13 @@ from perplexity_web_mcp.auth import (
     verify_totp,
 )
 from perplexity_web_mcp.browser_token import BrowserTokenError, load_browser_token
+from perplexity_web_mcp.cli.diagnostics import (
+    CliCheckpoint,
+    CliCommand,
+    CliErrorCode,
+    emit_checkpoint,
+    emit_error,
+)
 from perplexity_web_mcp.constants import API_BASE_URL, APP_HEADERS
 from perplexity_web_mcp.token_store import load_token
 from perplexity_web_mcp.token_store import save_token as save_token_to_config
@@ -185,17 +192,18 @@ def _display_and_save_token(token: str) -> bool:
 
     user_info = get_user_info(token)
     if not user_info:
-        console.print("[red]Authentication did not produce a valid Perplexity session. Please try again.[/red]")
+        emit_error(CliErrorCode.AUTH_SESSION_INVALID)
         return False
 
     _display_user_info(user_info)
     console.print()
 
     if save_token_to_config(token):
+        emit_checkpoint(CliCommand.LOGIN, CliCheckpoint.TOKEN_SAVED)
         console.print("[green]Token saved to ~/.config/perplexity-web-mcp/token[/green]")
         return True
 
-    console.print("[red]Failed to save token to config directory.[/red]")
+    emit_error(CliErrorCode.AUTH_SAVE_FAILED)
     return False
 
 
@@ -203,24 +211,27 @@ def import_browser_session(browser: str = "auto", cookie_file: Path | None = Non
     """Import, validate, and optionally save a Perplexity browser session."""
     try:
         token = load_browser_token(browser, cookie_file)
-    except BrowserTokenError as error:
-        console.print(f"[red]{error}[/red]")
+    except BrowserTokenError:
+        emit_error(CliErrorCode.AUTH_BROWSER_READ_FAILED)
         return False
+    emit_checkpoint(CliCommand.LOGIN, CliCheckpoint.BROWSER_COOKIE_LOADED)
 
     user_info = get_user_info(token)
     if not user_info:
-        console.print("[red]The imported browser session is expired or invalid. Sign in again and retry.[/red]")
+        emit_error(CliErrorCode.AUTH_SESSION_INVALID)
         return False
+    emit_checkpoint(CliCommand.LOGIN, CliCheckpoint.SESSION_VALIDATED)
 
     console.print(f"Authenticated as: {user_info.email} ({user_info.tier_display})")
     if not auto_save:
         return True
 
     if save_token_to_config(token):
+        emit_checkpoint(CliCommand.LOGIN, CliCheckpoint.TOKEN_SAVED)
         console.print("[green]Token saved to ~/.config/perplexity-web-mcp/token[/green]")
         return True
 
-    console.print("[red]Failed to save token to config directory.[/red]")
+    emit_error(CliErrorCode.AUTH_SAVE_FAILED)
     return False
 
 
@@ -372,8 +383,7 @@ def main() -> NoReturn:
         # Check if already authenticated
         token = load_token()
         if not token:
-            console.print("[red]Not authenticated.[/red] No saved token found.")
-            console.print("Run [bold]pwm-auth[/bold] to log in.")
+            emit_error(CliErrorCode.AUTH_REQUIRED)
             exit(1)
 
         user_info = get_user_info(token)
@@ -382,8 +392,7 @@ def main() -> NoReturn:
             _display_user_info(user_info)
             exit(0)
         else:
-            console.print("[red]Token expired or invalid.[/red]")
-            console.print("Run [bold]pwm-auth[/bold] to re-authenticate.")
+            emit_error(CliErrorCode.AUTH_INVALID)
             exit(1)
 
     if "--email" in args:
@@ -437,7 +446,8 @@ def main() -> NoReturn:
         exit(0)
 
     except KeyboardInterrupt:
-        exit(0)
+        emit_error(CliErrorCode.AUTH_CANCELLED)
+        exit(130)
 
     except Exception as error:
         console.print(f"\n[bold red]Error:[/bold red] {error}")

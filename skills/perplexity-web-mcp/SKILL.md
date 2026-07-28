@@ -408,12 +408,19 @@ For full model details: See [references/models.md](references/models.md)
 
 ## Error Recovery
 
-| Error            | Cause             | Solution                  |
-| ---------------- | ----------------- | ------------------------- |
-| 403 Forbidden    | Token expired     | `pwm login`               |
-| 429 Rate limit   | Quota exhausted   | Wait, check `pwm usage`   |
-| "No token found" | Not authenticated | `pwm login`               |
-| "LIMIT REACHED"  | Quota at zero     | Wait for reset or upgrade |
+The direct CLI emits fixed-field lifecycle checkpoints to stderr. They contain
+only command, phase, and exit code; successful answers stay on stdout. On
+failure, branch on the stable `code=` value rather than matching prose.
+
+| Code prefix / code               | Cause                         | Solution                          |
+| -------------------------------- | ----------------------------- | --------------------------------- |
+| `PWM_AUTH_REQUIRED`              | No saved session              | `pwm login --from-browser`        |
+| `PWM_AUTH_FORBIDDEN`             | Perplexity rejected session   | Re-import the browser session     |
+| `PWM_AUTH_BROWSER_READ_FAILED`   | Browser import failed         | Sign in, close browser, and retry |
+| `PWM_INPUT_*`                    | Invalid CLI input             | Read the command's `--help`       |
+| `PWM_QUERY_RATE_LIMITED`         | Quota exhausted               | Wait, check `pwm usage`           |
+| `PWM_QUERY_FAILED`               | Request failed                | Check auth/connectivity and retry |
+| `PWM_INTERNAL_ERROR`             | Unexpected CLI failure        | Run `pwm doctor`; report the code |
 
 ## Common Patterns
 

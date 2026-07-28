@@ -27,7 +27,13 @@ from typing import NoReturn
 import rich_click as click
 
 from perplexity_web_mcp.browser_token import SUPPORTED_BROWSERS
-from perplexity_web_mcp.exceptions import AuthenticationError, RateLimitError
+from perplexity_web_mcp.cli.diagnostics import (
+    CliCommand,
+    CliErrorCode,
+    emit_error,
+    run_with_checkpoints,
+)
+from perplexity_web_mcp.exceptions import AuthenticationError, PerplexityError, RateLimitError
 from perplexity_web_mcp.shared import (
     COUNCIL_DEFAULT_MODELS_STR,
     COUNCIL_DISPLAY_NAMES,
@@ -99,8 +105,8 @@ def cli(ctx):
 def _validate_source_for_cli(source: str) -> bool:
     try:
         resolve_source_focus(source)
-    except SourceResolutionError as error:
-        print(str(error), file=sys.stderr)
+    except SourceResolutionError:
+        emit_error(CliErrorCode.INPUT_SOURCE_INVALID)
         return False
     return True
 
@@ -131,8 +137,10 @@ def ask_cmd(query, model_name, thinking, source, json_output, no_citations, inte
       pwm ask "latest AI news" -m gpt52 -s academic
       pwm ask "explain transformers" -m claude_sonnet --thinking
     """
-    code = _cmd_ask_impl(query, model_name, thinking, source, json_output, no_citations, intent)
-    raise SystemExit(code)
+    run_with_checkpoints(
+        CliCommand.ASK,
+        lambda: _cmd_ask_impl(query, model_name, thinking, source, json_output, no_citations, intent),
+    )
 
 
 def _cmd_ask_impl(query, model_name, thinking, source, json_output, no_citations, intent):
@@ -144,7 +152,7 @@ def _cmd_ask_impl(query, model_name, thinking, source, json_output, no_citations
         explicit_model = model_name != "auto"
         if explicit_model:
             if model_name not in MODEL_MAP:
-                print(f"Error: Unknown model '{model_name}'. Available: {', '.join(MODEL_NAMES)}", file=sys.stderr)
+                emit_error(CliErrorCode.INPUT_MODEL_INVALID)
                 return 1
 
             model = resolve_model(model_name, thinking=thinking)
@@ -183,8 +191,17 @@ def _cmd_ask_impl(query, model_name, thinking, source, json_output, no_citations
                 print(response.answer)
             else:
                 print(response.format_response())
-    except (AuthenticationError, RateLimitError) as e:
-        print(str(e), file=sys.stderr)
+    except AuthenticationError:
+        emit_error(CliErrorCode.AUTH_FORBIDDEN)
+        return 1
+    except RateLimitError:
+        emit_error(CliErrorCode.QUERY_RATE_LIMITED)
+        return 1
+    except PerplexityError:
+        emit_error(CliErrorCode.QUERY_FAILED)
+        return 1
+    except Exception:
+        emit_error(CliErrorCode.INTERNAL_ERROR)
         return 1
 
     return 0
@@ -213,8 +230,7 @@ def research(query, source, json_output):
       pwm research "agentic AI trends 2026"
       pwm research "quantum computing advances" -s academic
     """
-    code = _cmd_research_impl(query, source, json_output)
-    raise SystemExit(code)
+    run_with_checkpoints(CliCommand.RESEARCH, lambda: _cmd_research_impl(query, source, json_output))
 
 
 def _cmd_research_impl(query, source, json_output):
@@ -230,14 +246,25 @@ def _cmd_research_impl(query, source, json_output):
         console = Console(stderr=True)
         with console.status("[bold cyan]Running deep research (this may take several minutes)...[/]"):
             result = ask(query, model, source)
-    except (AuthenticationError, RateLimitError) as e:
+    except AuthenticationError:
+        error_code = CliErrorCode.AUTH_FORBIDDEN
+    except RateLimitError:
+        error_code = CliErrorCode.QUERY_RATE_LIMITED
+    except PerplexityError:
+        error_code = CliErrorCode.QUERY_FAILED
+    except Exception:
+        error_code = CliErrorCode.INTERNAL_ERROR
+    else:
+        error_code = None
+
+    if error_code is not None:
         if json_output:
             import orjson
 
-            error_data = {"error": str(e), "model": "deep_research", "source": source}
+            error_data = {"error": {"code": error_code.value}, "model": "deep_research", "source": source}
             sys.stdout.buffer.write(orjson.dumps(error_data, option=orjson.OPT_INDENT_2))
             sys.stdout.buffer.write(b"\n")
-        print(str(e), file=sys.stderr)
+        emit_error(error_code)
         return 1
 
     if json_output:
@@ -474,8 +501,10 @@ def council(query, models_str, thinking, source, no_synthesis, chairman, json_ou
       pwm council "React vs Vue" --chairman claude_sonnet
       pwm council "React vs Vue" --no-synthesis --json
     """
-    code = _cmd_council_impl(query, models_str, source, not no_synthesis, json_output, thinking, chairman)
-    raise SystemExit(code)
+    run_with_checkpoints(
+        CliCommand.COUNCIL,
+        lambda: _cmd_council_impl(query, models_str, source, not no_synthesis, json_output, thinking, chairman),
+    )
 
 
 def _cmd_council_impl(query, models_str, source, synthesize, json_output, thinking=False, chairman="sonar"):
@@ -487,17 +516,18 @@ def _cmd_council_impl(query, models_str, source, synthesize, json_output, thinki
     model_names = [m.strip() for m in models_str.split(",") if m.strip()]
     for name in model_names:
         if name not in COUNCIL_MODEL_NAMES:
-            print(
-                f"Error: Unknown council model '{name}'. Available: {', '.join(COUNCIL_MODEL_NAMES)}", file=sys.stderr
-            )
+            emit_error(CliErrorCode.INPUT_COUNCIL_INVALID)
+            print("Unknown council model. Run `pwm council --help` for allowed models.", file=sys.stderr)
             return 1
 
     if len(model_names) < 2:
-        print("Error: Council requires at least 2 models.", file=sys.stderr)
+        emit_error(CliErrorCode.INPUT_COUNCIL_INVALID)
+        print("Council requires at least 2 models.", file=sys.stderr)
         return 1
 
     if chairman not in MODEL_NAMES:
-        print(f"Error: Unknown chairman model '{chairman}'. Available: {', '.join(MODEL_NAMES)}", file=sys.stderr)
+        emit_error(CliErrorCode.INPUT_COUNCIL_INVALID)
+        print("Unknown chairman model. Run `pwm council --help` for allowed models.", file=sys.stderr)
         return 1
 
     if chairman != "sonar" and synthesize:
@@ -544,8 +574,17 @@ def _cmd_council_impl(query, models_str, source, synthesize, json_output, thinki
         else:
             print(result.format_response())
 
-    except (AuthenticationError, RateLimitError) as e:
-        print(str(e), file=sys.stderr)
+    except AuthenticationError:
+        emit_error(CliErrorCode.AUTH_FORBIDDEN)
+        return 1
+    except RateLimitError:
+        emit_error(CliErrorCode.QUERY_RATE_LIMITED)
+        return 1
+    except PerplexityError:
+        emit_error(CliErrorCode.QUERY_FAILED)
+        return 1
+    except Exception:
+        emit_error(CliErrorCode.INTERNAL_ERROR)
         return 1
 
     return 0
@@ -613,10 +652,7 @@ def login(ctx, check, email, code, totp_code, from_browser, browser, cookie_file
         auth_args.append("--no-save")
 
     sys.argv = ["pwm-auth", *auth_args]
-    try:
-        auth_main()
-    except SystemExit as error:
-        raise SystemExit(error.code if isinstance(error.code, int) else 0)
+    run_with_checkpoints(CliCommand.LOGIN, auth_main)
 
 
 # ── Usage ──────────────────────────────────────────────────────────────────

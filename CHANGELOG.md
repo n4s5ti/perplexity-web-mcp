@@ -4,6 +4,16 @@ All notable changes to **perplexity-web-mcp-cli** are documented in this file.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **CLI lifecycle diagnostics** — Added fixed-field stderr checkpoints for browser login, direct queries, deep research, and model council commands without logging queries or credential material.
+- **Stable CLI error codes** — Added actionable `PWM_AUTH_*`, `PWM_INPUT_*`, `PWM_QUERY_*`, and `PWM_INTERNAL_ERROR` records with retryability and fixed remediation.
+- **Diagnostics regression coverage** — Added success, failure, exit-code, stdout-parity, and secret-redaction coverage for browser login and query workflows.
+
+---
+
 ## [0.14.6] - 2026-07-26
 
 ### Added

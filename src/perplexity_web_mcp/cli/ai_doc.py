@@ -351,16 +351,31 @@ Every non-smart query response includes a quota footer showing remaining limits.
 Check manually: pwm usage  OR  pplx_usage()
 
 ================================================================================
-ERROR RECOVERY
+CHECKPOINTS AND ERROR RECOVERY
 ================================================================================
 
-Error                    Cause               Solution
------------------------  ------------------  ------------------------------------
-403 Forbidden            Token expired       pwm login  OR  pplx_auth_request_code
-429 Rate limit           Quota exhausted     Wait, check pwm usage
-"No token found"         Not authenticated   pwm login
-"LIMIT REACHED"          Quota at zero       Wait for reset or upgrade plan
-Connection error         Network issue       Retry after a few seconds
+The login, ask, research, and council commands emit lifecycle records to stderr:
+  pwm: event=checkpoint command=ask phase=start
+  pwm: event=checkpoint command=ask phase=complete exit=0
+
+Checkpoint fields are allowlisted and never include queries, email addresses,
+tokens, cookies, paths, or raw argv. Successful answers remain on stdout.
+
+Handled failures emit `event=error`, a stable PWM_* code, and retryable=0|1.
+Branch on the code instead of matching prose:
+
+Code prefix / code             Cause                         Recovery
+-----------------------------  ----------------------------  --------------------------------------
+PWM_AUTH_REQUIRED              No saved session              pwm login --from-browser
+PWM_AUTH_FORBIDDEN             Perplexity rejected session   Re-import the browser session
+PWM_AUTH_BROWSER_READ_FAILED   Browser import failed         Sign in, close browser if needed, retry
+PWM_INPUT_*                    Invalid model/source/council  Read the command's --help
+PWM_QUERY_RATE_LIMITED         Quota exhausted               pwm usage; wait for reset
+PWM_QUERY_FAILED               Request failed                Check auth/connectivity and retry
+PWM_INTERNAL_ERROR             Unexpected CLI failure        pwm doctor; report the code
+
+Click usage errors retain Click's exit code 2. Handled operational failures
+exit 1. Successful commands exit 0.
 
 ================================================================================
 COMMON WORKFLOWS
