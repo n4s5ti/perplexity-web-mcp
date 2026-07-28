@@ -416,6 +416,8 @@ failure, branch on the stable `code=` value rather than matching prose.
 | -------------------------------- | ----------------------------- | --------------------------------- |
 | `PWM_AUTH_REQUIRED`              | No saved session              | `pwm login --from-browser`        |
 | `PWM_AUTH_FORBIDDEN`             | Perplexity rejected session   | Re-import the browser session     |
+| `PWM_AUTH_SESSION_INVALID`      | Imported session rejected     | Sign in again, then re-import     |
+| `PWM_AUTH_VALIDATION_UNAVAILABLE` | Session check unavailable     | Check connectivity and retry      |
 | `PWM_AUTH_BROWSER_READ_FAILED`   | Browser import failed         | Sign in, close browser, and retry |
 | `PWM_INPUT_*`                    | Invalid CLI input             | Read the command's `--help`       |
 | `PWM_QUERY_RATE_LIMITED`         | Quota exhausted               | Wait, check `pwm usage`           |

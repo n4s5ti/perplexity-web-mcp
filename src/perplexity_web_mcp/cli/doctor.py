@@ -64,15 +64,21 @@ def _check_authentication(token: str | None, token_exists: bool) -> bool:
     token_source = "file" if TOKEN_FILE.exists() else "env"
     _check("Token", True, f"present ({token_source}, {len(token)} chars)")  # type: ignore[arg-type]
 
-    from perplexity_web_mcp.cli.auth import get_user_info
+    from perplexity_web_mcp.cli.auth import SessionValidationStatus, validate_user_session
 
-    user_info = get_user_info(token)
-    if user_info:
-        _check("Account", True, f"{user_info.email}")
-        _check("Subscription", True, user_info.tier_display)
+    validation = validate_user_session(token)
+    if validation.status is SessionValidationStatus.VALID and validation.user_info is not None:
+        _check("Account", True, validation.user_info.email)
+        _check("Subscription", True, validation.user_info.tier_display)
         return True
-
-    return _check("Account", False, "token invalid or expired", "pwm login")
+    if validation.status is SessionValidationStatus.REJECTED:
+        return _check("Account", False, "token invalid or expired", "pwm login")
+    return _check(
+        "Account",
+        False,
+        "session validation unavailable",
+        "check connectivity and retry; keep the existing token",
+    )
 
 
 def _check_connectivity(token: str | None, token_exists: bool) -> bool:

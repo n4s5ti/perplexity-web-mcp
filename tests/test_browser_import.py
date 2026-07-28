@@ -11,7 +11,14 @@ from click.testing import CliRunner
 import pytest
 
 from perplexity_web_mcp.browser_token import SUPPORTED_BROWSERS, BrowserTokenError, load_browser_token
-from perplexity_web_mcp.cli.auth import SubscriptionTier, UserInfo, auth_non_interactive, import_browser_session
+from perplexity_web_mcp.cli.auth import (
+    SessionValidationResult,
+    SessionValidationStatus,
+    SubscriptionTier,
+    UserInfo,
+    auth_non_interactive,
+    import_browser_session,
+)
 from perplexity_web_mcp.cli.main import cli
 from perplexity_web_mcp.constants import SESSION_COOKIE_NAME
 
@@ -129,10 +136,10 @@ class TestBrowserSessionImport:
     def test_browser_import_validates_account_before_saving(self) -> None:
         calls: list[str] = []
 
-        def get_user_info(token: str) -> UserInfo:
+        def validate_user_session(token: str) -> SessionValidationResult:
             assert token == TEST_TOKEN
             calls.append("validate")
-            return authenticated_user()
+            return SessionValidationResult(SessionValidationStatus.VALID, authenticated_user())
 
         def save_token(token: str) -> bool:
             assert token == TEST_TOKEN
@@ -141,7 +148,7 @@ class TestBrowserSessionImport:
 
         with (
             patch("perplexity_web_mcp.cli.auth.load_browser_token", return_value=TEST_TOKEN),
-            patch("perplexity_web_mcp.cli.auth.get_user_info", side_effect=get_user_info),
+            patch("perplexity_web_mcp.cli.auth.validate_user_session", side_effect=validate_user_session),
             patch("perplexity_web_mcp.cli.auth.save_token_to_config", side_effect=save_token),
         ):
             assert import_browser_session("auto", None, auto_save=True) is True
@@ -153,7 +160,10 @@ class TestBrowserSessionImport:
 
         with (
             patch("perplexity_web_mcp.cli.auth.load_browser_token", return_value=TEST_TOKEN),
-            patch("perplexity_web_mcp.cli.auth.get_user_info", return_value=None),
+            patch(
+                "perplexity_web_mcp.cli.auth.validate_user_session",
+                return_value=SessionValidationResult(SessionValidationStatus.REJECTED),
+            ),
             patch("perplexity_web_mcp.cli.auth.save_token_to_config", save_token),
         ):
             assert import_browser_session("auto", None, auto_save=True) is False
@@ -165,7 +175,10 @@ class TestBrowserSessionImport:
 
         with (
             patch("perplexity_web_mcp.cli.auth.load_browser_token", return_value=TEST_TOKEN),
-            patch("perplexity_web_mcp.cli.auth.get_user_info", return_value=authenticated_user()),
+            patch(
+                "perplexity_web_mcp.cli.auth.validate_user_session",
+                return_value=SessionValidationResult(SessionValidationStatus.VALID, authenticated_user()),
+            ),
             patch("perplexity_web_mcp.cli.auth.save_token_to_config", save_token),
         ):
             assert import_browser_session("auto", None, auto_save=False) is True
@@ -175,7 +188,10 @@ class TestBrowserSessionImport:
     def test_browser_import_output_does_not_disclose_session_token(self, capsys: pytest.CaptureFixture[str]) -> None:
         with (
             patch("perplexity_web_mcp.cli.auth.load_browser_token", return_value=TEST_TOKEN),
-            patch("perplexity_web_mcp.cli.auth.get_user_info", return_value=authenticated_user()),
+            patch(
+                "perplexity_web_mcp.cli.auth.validate_user_session",
+                return_value=SessionValidationResult(SessionValidationStatus.VALID, authenticated_user()),
+            ),
             patch("perplexity_web_mcp.cli.auth.save_token_to_config", return_value=True),
         ):
             assert import_browser_session("auto", None, auto_save=True) is True
@@ -243,7 +259,10 @@ class TestOtpTokenDisclosure:
             patch("perplexity_web_mcp.cli.auth._initialize_session", return_value=(MagicMock(), "csrf")),
             patch("perplexity_web_mcp.cli.auth._validate_and_get_redirect_url", return_value="https://callback"),
             patch("perplexity_web_mcp.cli.auth._complete_auth_callback", return_value=TEST_TOKEN),
-            patch("perplexity_web_mcp.cli.auth.get_user_info", return_value=authenticated_user()),
+            patch(
+                "perplexity_web_mcp.cli.auth.validate_user_session",
+                return_value=SessionValidationResult(SessionValidationStatus.VALID, authenticated_user()),
+            ),
             patch("perplexity_web_mcp.cli.auth.save_token_to_config", return_value=True),
         ):
             assert auth_non_interactive("reader@example.com", code="123456") == TEST_TOKEN

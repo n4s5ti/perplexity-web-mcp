@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 import pytest
 
 from perplexity_web_mcp.browser_token import BrowserTokenError
-from perplexity_web_mcp.cli.auth import SubscriptionTier, UserInfo, import_browser_session
+from perplexity_web_mcp.cli.auth import (
+    SessionValidationResult,
+    SessionValidationStatus,
+    SubscriptionTier,
+    UserInfo,
+    import_browser_session,
+    validate_user_session,
+)
 from perplexity_web_mcp.cli.auth import main as auth_main
 from perplexity_web_mcp.cli.diagnostics import CliErrorCode
 from perplexity_web_mcp.cli.main import cli
@@ -98,13 +105,75 @@ class TestQueryCheckpoints:
         assert SECRET_QUERY not in result.stderr
 
 
+class TestSessionValidationOutcomes:
+    """HTTP rejection and transient validation failures remain distinguishable."""
+
+    @pytest.mark.parametrize("status_code", [401, 403])
+    def test_http_auth_rejection_is_typed(self, status_code: int) -> None:
+        session = MagicMock()
+        session.get.return_value.status_code = status_code
+        with patch("perplexity_web_mcp.cli.auth.Session") as session_type:
+            session_type.return_value.__enter__.return_value = session
+            result = validate_user_session(SECRET_TOKEN)
+
+        assert result.status is SessionValidationStatus.REJECTED
+        assert result.user_info is None
+        assert result.error is None
+
+    def test_service_failure_is_typed_as_retryable_unavailable(self) -> None:
+        session = MagicMock()
+        session.get.return_value.status_code = 503
+        with patch("perplexity_web_mcp.cli.auth.Session") as session_type:
+            session_type.return_value.__enter__.return_value = session
+            result = validate_user_session(SECRET_TOKEN)
+
+        assert result.status is SessionValidationStatus.UNAVAILABLE
+        assert result.user_info is None
+        assert isinstance(result.error, RuntimeError)
+
+    @pytest.mark.parametrize(
+        ("validation", "code", "retryable"),
+        [
+            (
+                SessionValidationResult(SessionValidationStatus.REJECTED),
+                CliErrorCode.AUTH_SESSION_INVALID,
+                0,
+            ),
+            (
+                SessionValidationResult(SessionValidationStatus.UNAVAILABLE, error=RuntimeError(SECRET_TOKEN)),
+                CliErrorCode.AUTH_VALIDATION_UNAVAILABLE,
+                1,
+            ),
+        ],
+    )
+    def test_browser_import_maps_validation_outcome_without_secret_leakage(
+        self,
+        validation: SessionValidationResult,
+        code: CliErrorCode,
+        retryable: int,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        with (
+            patch("perplexity_web_mcp.cli.auth.load_browser_token", return_value=SECRET_TOKEN),
+            patch("perplexity_web_mcp.cli.auth.validate_user_session", return_value=validation),
+        ):
+            assert import_browser_session("firefox") is False
+
+        captured = capsys.readouterr()
+        assert f"code={code.value} retryable={retryable}" in captured.err
+        assert SECRET_TOKEN not in captured.err
+
+
 class TestLoginCheckpoints:
     """Browser login exposes lifecycle state without exposing credential material."""
 
     def test_browser_import_emits_validation_and_save_checkpoints(self, capsys: pytest.CaptureFixture[str]) -> None:
         with (
             patch("perplexity_web_mcp.cli.auth.load_browser_token", return_value=SECRET_TOKEN),
-            patch("perplexity_web_mcp.cli.auth.get_user_info", return_value=_authenticated_user()),
+            patch(
+                "perplexity_web_mcp.cli.auth.validate_user_session",
+                return_value=SessionValidationResult(SessionValidationStatus.VALID, _authenticated_user()),
+            ),
             patch("perplexity_web_mcp.cli.auth.save_token_to_config", return_value=True),
         ):
             assert import_browser_session("firefox") is True

@@ -38,7 +38,7 @@ class CliErrorCode(StrEnum):
     INPUT_MODEL_INVALID = "PWM_INPUT_MODEL_INVALID"
     INPUT_COUNCIL_INVALID = "PWM_INPUT_COUNCIL_INVALID"
     AUTH_REQUIRED = "PWM_AUTH_REQUIRED"
-    AUTH_INVALID = "PWM_AUTH_INVALID"
+    AUTH_VALIDATION_UNAVAILABLE = "PWM_AUTH_VALIDATION_UNAVAILABLE"
     AUTH_FORBIDDEN = "PWM_AUTH_FORBIDDEN"
     AUTH_BROWSER_READ_FAILED = "PWM_AUTH_BROWSER_READ_FAILED"
     AUTH_SESSION_INVALID = "PWM_AUTH_SESSION_INVALID"
@@ -73,9 +73,10 @@ _ERROR_DETAILS = {
         "No usable Perplexity session is configured.",
         "Run `pwm login --from-browser` after signing in at perplexity.ai.",
     ),
-    CliErrorCode.AUTH_INVALID: _ErrorDetail(
-        "The saved session could not be validated.",
-        "Check connectivity or sign in again, then run `pwm login --from-browser`.",
+    CliErrorCode.AUTH_VALIDATION_UNAVAILABLE: _ErrorDetail(
+        "The Perplexity session validation service is unavailable.",
+        "Check connectivity and retry without replacing the saved session.",
+        retryable=True,
     ),
     CliErrorCode.AUTH_FORBIDDEN: _ErrorDetail(
         "Perplexity returned 403: the saved session is forbidden.",

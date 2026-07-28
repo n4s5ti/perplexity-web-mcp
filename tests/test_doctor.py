@@ -13,7 +13,8 @@ from unittest.mock import MagicMock as _MagicMock  # AITool removed, using mock
 
 import pytest
 
-from perplexity_web_mcp.cli.doctor import cmd_doctor
+from perplexity_web_mcp.cli.auth import SessionValidationResult, SessionValidationStatus
+from perplexity_web_mcp.cli.doctor import _check_authentication, cmd_doctor
 from perplexity_web_mcp.rate_limits import RateLimits
 
 
@@ -36,7 +37,7 @@ class TestDoctorAllGreen:
     @patch("perplexity_web_mcp.cli.doctor.TOKEN_FILE")
     @patch("perplexity_web_mcp.cli.doctor.load_token", return_value="valid-token-12345678901")
     @patch("perplexity_web_mcp.cli.doctor.shutil.which", return_value="/usr/local/bin/pwm")
-    @patch("perplexity_web_mcp.cli.auth.get_user_info")
+    @patch("perplexity_web_mcp.cli.auth.validate_user_session")
     @patch("perplexity_web_mcp.rate_limits.fetch_rate_limits")
     @patch("perplexity_web_mcp.cli.setup._get_tools", return_value=[])
     @patch("perplexity_web_mcp.cli.skill._get_targets", return_value=[])
@@ -56,7 +57,7 @@ class TestDoctorAllGreen:
         mock_user_info = MagicMock()
         mock_user_info.email = "test@example.com"
         mock_user_info.tier_display = "Pro"
-        mock_user.return_value = mock_user_info
+        mock_user.return_value = SessionValidationResult(SessionValidationStatus.VALID, mock_user_info)
 
         mock_limits.return_value = RateLimits(
             remaining_pro=100, remaining_research=5, remaining_labs=10, remaining_agentic_research=3
@@ -106,7 +107,10 @@ class TestDoctorExpiredToken:
     @patch("perplexity_web_mcp.cli.doctor.TOKEN_FILE")
     @patch("perplexity_web_mcp.cli.doctor.load_token", return_value="expired-token-12345678901")
     @patch("perplexity_web_mcp.cli.doctor.shutil.which", return_value="/usr/local/bin/pwm")
-    @patch("perplexity_web_mcp.cli.auth.get_user_info", return_value=None)
+    @patch(
+        "perplexity_web_mcp.cli.auth.validate_user_session",
+        return_value=SessionValidationResult(SessionValidationStatus.REJECTED),
+    )
     @patch("perplexity_web_mcp.cli.setup._get_tools", return_value=[])
     @patch("perplexity_web_mcp.cli.skill._get_targets", return_value=[])
     def test_expired_token(
@@ -124,6 +128,18 @@ class TestDoctorExpiredToken:
         out = capsys.readouterr().out
         assert "invalid or expired" in out
 
+    def test_validation_outage_preserves_existing_token(self, capsys: pytest.CaptureFixture) -> None:
+        with patch(
+            "perplexity_web_mcp.cli.auth.validate_user_session",
+            return_value=SessionValidationResult(SessionValidationStatus.UNAVAILABLE, error=RuntimeError("offline")),
+        ):
+            assert _check_authentication("existing-token", True) is False
+
+        out = capsys.readouterr().out
+        assert "session validation unavailable" in out
+        assert "keep the existing token" in out
+        assert "invalid or expired" not in out
+
 
 # ============================================================================
 # 4. Rate limits exhausted
@@ -136,7 +152,7 @@ class TestDoctorLimitsExhausted:
     @patch("perplexity_web_mcp.cli.doctor.TOKEN_FILE")
     @patch("perplexity_web_mcp.cli.doctor.load_token", return_value="valid-token-12345678901")
     @patch("perplexity_web_mcp.cli.doctor.shutil.which", return_value="/usr/local/bin/pwm")
-    @patch("perplexity_web_mcp.cli.auth.get_user_info")
+    @patch("perplexity_web_mcp.cli.auth.validate_user_session")
     @patch("perplexity_web_mcp.rate_limits.fetch_rate_limits")
     @patch("perplexity_web_mcp.cli.setup._get_tools", return_value=[])
     @patch("perplexity_web_mcp.cli.skill._get_targets", return_value=[])
@@ -156,7 +172,7 @@ class TestDoctorLimitsExhausted:
         mock_user_info = MagicMock()
         mock_user_info.email = "test@example.com"
         mock_user_info.tier_display = "Pro"
-        mock_user.return_value = mock_user_info
+        mock_user.return_value = SessionValidationResult(SessionValidationStatus.VALID, mock_user_info)
 
         mock_limits.return_value = RateLimits(remaining_pro=0, remaining_research=0)
 
@@ -176,7 +192,7 @@ class TestDoctorMCPNotConfigured:
     @patch("perplexity_web_mcp.cli.doctor.TOKEN_FILE")
     @patch("perplexity_web_mcp.cli.doctor.load_token", return_value="valid-token-12345678901")
     @patch("perplexity_web_mcp.cli.doctor.shutil.which", return_value="/usr/local/bin/pwm")
-    @patch("perplexity_web_mcp.cli.auth.get_user_info")
+    @patch("perplexity_web_mcp.cli.auth.validate_user_session")
     @patch("perplexity_web_mcp.rate_limits.fetch_rate_limits")
     @patch("perplexity_web_mcp.cli.setup._get_tools")
     @patch("perplexity_web_mcp.cli.setup._is_configured_compat", return_value=False)
@@ -198,7 +214,7 @@ class TestDoctorMCPNotConfigured:
         mock_user_info = MagicMock()
         mock_user_info.email = "t@e.com"
         mock_user_info.tier_display = "Pro"
-        mock_user.return_value = mock_user_info
+        mock_user.return_value = SessionValidationResult(SessionValidationStatus.VALID, mock_user_info)
 
         mock_limits.return_value = RateLimits(remaining_pro=100)
 
@@ -222,7 +238,7 @@ class TestDoctorVerbose:
     @patch("perplexity_web_mcp.cli.doctor.TOKEN_FILE")
     @patch("perplexity_web_mcp.cli.doctor.load_token", return_value="valid-token-12345678901")
     @patch("perplexity_web_mcp.cli.doctor.shutil.which", return_value="/usr/local/bin/pwm")
-    @patch("perplexity_web_mcp.cli.auth.get_user_info")
+    @patch("perplexity_web_mcp.cli.auth.validate_user_session")
     @patch("perplexity_web_mcp.rate_limits.fetch_rate_limits")
     @patch("perplexity_web_mcp.cli.setup._get_tools", return_value=[])
     @patch("perplexity_web_mcp.cli.skill._get_targets", return_value=[])
@@ -245,7 +261,7 @@ class TestDoctorVerbose:
         mock_user_info = MagicMock()
         mock_user_info.email = "t@e.com"
         mock_user_info.tier_display = "Pro"
-        mock_user.return_value = mock_user_info
+        mock_user.return_value = SessionValidationResult(SessionValidationStatus.VALID, mock_user_info)
 
         mock_limits.return_value = RateLimits(remaining_pro=100)
 

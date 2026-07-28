@@ -364,15 +364,17 @@ tokens, cookies, paths, or raw argv. Successful answers remain on stdout.
 Handled failures emit `event=error`, a stable PWM_* code, and retryable=0|1.
 Branch on the code instead of matching prose:
 
-Code prefix / code             Cause                         Recovery
------------------------------  ----------------------------  --------------------------------------
-PWM_AUTH_REQUIRED              No saved session              pwm login --from-browser
-PWM_AUTH_FORBIDDEN             Perplexity rejected session   Re-import the browser session
-PWM_AUTH_BROWSER_READ_FAILED   Browser import failed         Sign in, close browser if needed, retry
-PWM_INPUT_*                    Invalid model/source/council  Read the command's --help
-PWM_QUERY_RATE_LIMITED         Quota exhausted               pwm usage; wait for reset
-PWM_QUERY_FAILED               Request failed                Check auth/connectivity and retry
-PWM_INTERNAL_ERROR             Unexpected CLI failure        pwm doctor; report the code
+Code / prefix                     Cause                         Recovery
+--------------------------------  ----------------------------  --------------------------------------
+PWM_AUTH_REQUIRED                 No saved session              pwm login --from-browser
+PWM_AUTH_FORBIDDEN                Query session rejected        Re-import the browser session
+PWM_AUTH_SESSION_INVALID          Imported session rejected     Sign in again, then re-import
+PWM_AUTH_VALIDATION_UNAVAILABLE   Session check unavailable     Check connectivity and retry
+PWM_AUTH_BROWSER_READ_FAILED      Browser import failed         Sign in, close browser if needed, retry
+PWM_INPUT_*                       Invalid model/source/council  Read the command's --help
+PWM_QUERY_RATE_LIMITED            Quota exhausted               pwm usage; wait for reset
+PWM_QUERY_FAILED                  Request failed                Check auth/connectivity and retry
+PWM_INTERNAL_ERROR                Unexpected CLI failure        pwm doctor; report the code
 
 Click usage errors retain Click's exit code 2. Handled operational failures
 exit 1. Successful commands exit 0.

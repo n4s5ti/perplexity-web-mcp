@@ -29,6 +29,7 @@ from perplexity_web_mcp.cli.diagnostics import (
     CliCommand,
     CliErrorCode,
     emit_checkpoint,
+    emit_debug_exception,
     emit_error,
 )
 from perplexity_web_mcp.constants import API_BASE_URL, APP_HEADERS
@@ -104,12 +105,28 @@ class UserInfo:
         }.get(self.subscription_tier, "Unknown")
 
 
-def get_user_info(token: str) -> UserInfo | None:
-    """Fetch user info from Perplexity API."""
+class SessionValidationStatus(str, Enum):
+    """Typed outcome for validating a Perplexity browser session."""
+
+    VALID = "valid"
+    REJECTED = "rejected"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class SessionValidationResult:
+    """Session validation outcome without exposing response bodies."""
+
+    status: SessionValidationStatus
+    user_info: UserInfo | None = None
+    error: Exception | None = None
+
+
+def validate_user_session(token: str) -> SessionValidationResult:
+    """Validate a Perplexity session while preserving rejection vs outage."""
     import logging
 
-    _logger = logging.getLogger(__name__)
-
+    logger = logging.getLogger(__name__)
     try:
         with Session(
             impersonate="chrome",
@@ -118,10 +135,43 @@ def get_user_info(token: str) -> UserInfo | None:
         ) as session:
             response = session.get(f"{BASE_URL}/api/user")
             if response.status_code == 200:
-                return UserInfo.from_api(response.json())
-            _logger.debug(f"get_user_info: HTTP {response.status_code}")
-    except Exception as exc:
-        _logger.debug(f"get_user_info failed: {exc}")
+                try:
+                    return SessionValidationResult(
+                        SessionValidationStatus.VALID,
+                        user_info=UserInfo.from_api(response.json()),
+                    )
+                except Exception as error:
+                    logger.debug("validate_user_session: response parse failed")
+                    return SessionValidationResult(SessionValidationStatus.UNAVAILABLE, error=error)
+            if response.status_code in {401, 403}:
+                logger.debug("validate_user_session: session rejected")
+                return SessionValidationResult(SessionValidationStatus.REJECTED)
+            logger.debug("validate_user_session: HTTP %s", response.status_code)
+            return SessionValidationResult(
+                SessionValidationStatus.UNAVAILABLE,
+                error=RuntimeError(f"HTTP {response.status_code}"),
+            )
+    except Exception as error:
+        logger.debug("validate_user_session: request failed (%s)", type(error).__name__)
+        return SessionValidationResult(SessionValidationStatus.UNAVAILABLE, error=error)
+
+
+def get_user_info(token: str) -> UserInfo | None:
+    """Fetch user info while preserving the legacy optional return contract."""
+    return validate_user_session(token).user_info
+
+
+def _validated_user_info(token: str) -> UserInfo | None:
+    """Return validated user info and emit a precise, stable failure code."""
+    result = validate_user_session(token)
+    if result.status is SessionValidationStatus.VALID:
+        return result.user_info
+    if result.status is SessionValidationStatus.REJECTED:
+        emit_error(CliErrorCode.AUTH_SESSION_INVALID)
+        return None
+    emit_error(CliErrorCode.AUTH_VALIDATION_UNAVAILABLE)
+    if result.error is not None:
+        emit_debug_exception(result.error)
     return None
 
 
@@ -190,9 +240,8 @@ def _display_user_info(user_info: UserInfo) -> None:
 def _display_and_save_token(token: str) -> bool:
     """Validate an authenticated session, display account info, and save it."""
 
-    user_info = get_user_info(token)
+    user_info = _validated_user_info(token)
     if not user_info:
-        emit_error(CliErrorCode.AUTH_SESSION_INVALID)
         return False
 
     _display_user_info(user_info)
@@ -216,9 +265,8 @@ def import_browser_session(browser: str = "auto", cookie_file: Path | None = Non
         return False
     emit_checkpoint(CliCommand.LOGIN, CliCheckpoint.BROWSER_COOKIE_LOADED)
 
-    user_info = get_user_info(token)
+    user_info = _validated_user_info(token)
     if not user_info:
-        emit_error(CliErrorCode.AUTH_SESSION_INVALID)
         return False
     emit_checkpoint(CliCommand.LOGIN, CliCheckpoint.SESSION_VALIDATED)
 
@@ -295,9 +343,8 @@ def auth_non_interactive(
         redirect_url = _validate_and_get_redirect_url(session, email, code)
         token = _complete_auth_callback(session, redirect_url, totp_code)
 
-        user_info = get_user_info(token)
+        user_info = _validated_user_info(token)
         if not user_info:
-            print("Error: Authentication did not produce a valid Perplexity session. Please try again.")
             return None
 
         print(f"Authenticated as: {user_info.email} ({user_info.tier_display})")
@@ -386,13 +433,12 @@ def main() -> NoReturn:
             emit_error(CliErrorCode.AUTH_REQUIRED)
             exit(1)
 
-        user_info = get_user_info(token)
+        user_info = _validated_user_info(token)
         if user_info:
             console.print("[bold green]Authenticated[/bold green]\n")
             _display_user_info(user_info)
             exit(0)
         else:
-            emit_error(CliErrorCode.AUTH_INVALID)
             exit(1)
 
     if "--email" in args:
