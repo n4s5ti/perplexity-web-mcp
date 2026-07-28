@@ -9,6 +9,7 @@ Test categories:
 from __future__ import annotations
 
 from pathlib import Path
+from stat import S_IMODE
 
 import pytest
 
@@ -49,6 +50,9 @@ class TestSaveToken:
         assert patch_paths.exists()
         assert (patch_paths / "token").read_text() == token
         assert patch_environ[token_store.ENV_KEY] == token
+        assert S_IMODE(patch_paths.stat().st_mode) == 0o700
+        assert S_IMODE((patch_paths / "token").stat().st_mode) == 0o600
+        assert not list(patch_paths.glob(".token-*"))
 
     def test_returns_false_on_filesystem_error(self, monkeypatch, tmp_path) -> None:
         """save_token returns False when filesystem operations fail."""

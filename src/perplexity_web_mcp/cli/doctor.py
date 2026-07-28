@@ -85,10 +85,10 @@ def _check_connectivity(token: str | None, token_exists: bool) -> bool:
     try:
         from curl_cffi.requests import Session as CurlSession
 
-        from perplexity_web_mcp.constants import API_BASE_URL, ENDPOINT_SEARCH_INIT, SESSION_COOKIE_NAME
+        from perplexity_web_mcp.auth import perplexity_session_cookies
+        from perplexity_web_mcp.constants import API_BASE_URL, ENDPOINT_SEARCH_INIT
 
-        with CurlSession(impersonate="chrome") as s:
-            s.cookies.set(SESSION_COOKIE_NAME, token)  # type: ignore[arg-type]
+        with CurlSession(impersonate="chrome", cookies=perplexity_session_cookies(token)) as s:
             resp = s.get(f"{API_BASE_URL}{ENDPOINT_SEARCH_INIT}", params={"q": "test"}, timeout=10)
 
         if resp.status_code == 200:

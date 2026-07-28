@@ -23,6 +23,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    "browser-cookie3>=0.20.1,<0.21.0",
     "curl-cffi>=0.15.0,<1.0",
     "loguru>=0.7.3,<1.0",
     "orjson>=3.11.6,<4.0",

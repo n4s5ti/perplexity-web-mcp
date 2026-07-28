@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from curl_cffi.requests import Session
+from curl_cffi.requests import Cookies, Session
 
 from .constants import API_BASE_URL, API_VERSION, APP_HEADERS, SESSION_COOKIE_NAME
 
@@ -15,6 +16,13 @@ AUTH_OTP_REDIRECT_ENDPOINT = "/api/auth/otp-redirect-link"
 AUTH_SIGNIN_ENDPOINT = "/api/auth/signin/email"
 AUTH_TOTP_VERIFY_ENDPOINT = "/api/auth/totp-challenge/verify"
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+
+
+def perplexity_session_cookies(token: str) -> Cookies:
+    """Build the secure account cookie jar used by Perplexity web endpoints."""
+    cookies = Cookies()
+    cookies.set(SESSION_COOKIE_NAME, token, domain=".perplexity.ai", secure=True)
+    return cookies
 
 
 def create_auth_session() -> tuple[Session, str]:
@@ -124,23 +132,35 @@ def verify_totp(session: Session, challenge_token: str, totp_code: str) -> None:
         session.get(redirect if redirect.startswith("http") else f"{API_BASE_URL}{redirect}")
 
 
+def session_token_from_cookie_pairs(cookie_pairs: Iterable[tuple[str, str]]) -> str | None:
+    """Return a complete session token from a direct cookie or ordered chunks."""
+    direct_token: str | None = None
+    chunks: list[tuple[int, str]] = []
+    prefix = f"{SESSION_COOKIE_NAME}."
+
+    for name, value in cookie_pairs:
+        if not value:
+            continue
+        if name == SESSION_COOKIE_NAME:
+            direct_token = value
+            continue
+        if name.startswith(prefix):
+            suffix = name.removeprefix(prefix)
+            if suffix.isdigit():
+                chunks.append((int(suffix), value))
+
+    if direct_token:
+        return direct_token
+    if chunks:
+        return "".join(value for _, value in sorted(chunks))
+    return None
+
+
 def extract_session_token(session: Session) -> str:
     """Return the session token, including a token split across cookie chunks."""
-    token = session.cookies.get(SESSION_COOKIE_NAME)
+    token = session_token_from_cookie_pairs(session.cookies.items())
     if token:
         return token
-
-    chunks = sorted(
-        [
-            (name, value)
-            for name, value in session.cookies.items()
-            if name.startswith(f"{SESSION_COOKIE_NAME}.") and name.removeprefix(f"{SESSION_COOKIE_NAME}.").isdigit()
-        ],
-        key=lambda item: int(item[0].removeprefix(f"{SESSION_COOKIE_NAME}.")),
-    )
-    if chunks:
-        return "".join(value for _, value in chunks)
-
     raise ValueError("Authentication completed, but the session token cookie was not returned.")
 
 

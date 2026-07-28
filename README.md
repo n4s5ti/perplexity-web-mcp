@@ -233,7 +233,14 @@ pwm login --check                            # Check if authenticated
 pwm login --email user@example.com           # Send verification code (non-interactive)
 pwm login --email user@example.com --code 123456  # Complete auth with code
 pwm login --email user@example.com --code 123456 --totp-code 654321  # Account with TOTP enabled
+pwm login --from-browser                     # Import the signed-in browser session
+pwm login --from-browser --browser firefox   # Import from a specific browser
+pwm login --from-browser --browser chrome --cookie-file PATH  # Custom Chromium profile
 ```
+
+Browser import validates the Perplexity account before saving. `--browser` defaults to `auto` and accepts
+`chrome`, `chromium`, `brave`, `edge`, `firefox`, `librewolf`, `opera`, `opera-gx`, and `vivaldi`.
+Use `--no-save` to validate a browser session without storing it.
 
 Set `PWM_SAVE_TO_LIBRARY=1` to save shared CLI and MCP queries to the Perplexity thread library. Queries are
 incognito by default.

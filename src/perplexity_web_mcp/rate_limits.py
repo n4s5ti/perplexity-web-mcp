@@ -17,13 +17,13 @@ from typing import Any
 
 from curl_cffi.requests import Session
 
+from .auth import perplexity_session_cookies
 from .constants import (
     API_BASE_URL,
     APP_HEADERS,
     ENDPOINT_CREDITS,
     ENDPOINT_RATE_LIMITS,
     ENDPOINT_USER_SETTINGS,
-    SESSION_COOKIE_NAME,
 )
 from .logging import get_logger
 
@@ -317,7 +317,7 @@ def _create_session(token: str) -> Session:
             "Origin": API_BASE_URL,
             "Accept": "application/json",
         },
-        cookies={SESSION_COOKIE_NAME: token},
+        cookies=perplexity_session_cookies(token),
     )
 
 

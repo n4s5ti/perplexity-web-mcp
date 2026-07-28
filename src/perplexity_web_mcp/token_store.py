@@ -7,8 +7,10 @@ across all invocations (CLI, MCP server, API server).
 from __future__ import annotations
 
 import logging
+import os
 from os import environ
 from pathlib import Path
+import tempfile
 
 
 # Use stdlib logging to avoid circular import with .logging module
@@ -27,17 +29,33 @@ def save_token(token: str) -> bool:
 
     Returns True if successful, False otherwise.
     """
+    temporary_path: Path | None = None
     try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        TOKEN_FILE.write_text(token, encoding="utf-8")
-        # Restrict permissions (owner read/write only)
+        CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+        CONFIG_DIR.chmod(0o700)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=CONFIG_DIR,
+            prefix=".token-",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_path.chmod(0o600)
+            temporary_file.write(token)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+
+        temporary_path.replace(TOKEN_FILE)
         TOKEN_FILE.chmod(0o600)
-        # Also update environment so current process uses new token
         environ[ENV_KEY] = token
         return True
     except Exception as exc:
         _logger.warning(f"Failed to save token to {TOKEN_FILE}: {exc}")
         return False
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def load_token() -> str | None:

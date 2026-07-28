@@ -20,11 +20,13 @@ Subcommands:
 from __future__ import annotations
 
 from importlib import metadata
+from pathlib import Path
 import sys
 from typing import NoReturn
 
 import rich_click as click
 
+from perplexity_web_mcp.browser_token import SUPPORTED_BROWSERS
 from perplexity_web_mcp.exceptions import AuthenticationError, RateLimitError
 from perplexity_web_mcp.shared import (
     COUNCIL_DEFAULT_MODELS_STR,
@@ -556,36 +558,65 @@ def _cmd_council_impl(query, models_str, source, synthesize, json_output, thinki
 @click.option("--check", is_flag=True, help="Check current auth status (no login prompt).")
 @click.option("--email", default=None, help="Send verification code to email (non-interactive).")
 @click.option("--code", default=None, help="Complete auth with 6-digit code from email.")
+@click.option("--totp-code", default=None, help="Complete auth with a 6-digit authenticator code.")
+@click.option("--from-browser", is_flag=True, help="Import the Perplexity session from a browser.")
+@click.option(
+    "--browser",
+    type=click.Choice(("auto", *SUPPORTED_BROWSERS), case_sensitive=False),
+    default="auto",
+    show_default=True,
+    help="Browser to import from.",
+)
+@click.option(
+    "--cookie-file",
+    type=click.Path(path_type=Path),
+    default=None,
+    metavar="PATH",
+    help="Chromium-family cookie database to import from.",
+)
 @click.option("--no-save", is_flag=True, help="Don't save token to config.")
 @click.pass_context
-def login(ctx, check, email, code, no_save):
+def login(ctx, check, email, code, totp_code, from_browser, browser, cookie_file, no_save):
     """Authenticate with Perplexity.
 
     \b
     Examples:
       pwm login                                    # Interactive login
+      pwm login --from-browser                     # Import browser session
+      pwm login --from-browser --browser firefox   # Import Firefox session
+      pwm login --from-browser --browser chrome --cookie-file PATH
       pwm login --check                            # Check current auth status
       pwm login --email user@example.com           # Send verification code
       pwm login --email user@example.com --code 123456  # Complete auth
     """
+    if from_browser and (check or email or code or totp_code):
+        raise click.UsageError("--from-browser cannot be combined with --check, --email, --code, or --totp-code.", ctx)
+    if not from_browser and (browser != "auto" or cookie_file is not None):
+        raise click.UsageError("--browser and --cookie-file require --from-browser.", ctx)
+
     from perplexity_web_mcp.cli.auth import main as auth_main
 
-    # Build args for the auth module
     auth_args = []
+    if from_browser:
+        auth_args.extend(["--from-browser", "--browser", browser])
+        if cookie_file is not None:
+            auth_args.extend(["--cookie-file", str(cookie_file)])
     if check:
         auth_args.append("--check")
     if email:
         auth_args.extend(["--email", email])
     if code:
         auth_args.extend(["--code", code])
+    if totp_code:
+        auth_args.extend(["--totp-code", totp_code])
     if no_save:
         auth_args.append("--no-save")
 
     sys.argv = ["pwm-auth", *auth_args]
     try:
         auth_main()
-    except SystemExit as e:
-        raise SystemExit(e.code if isinstance(e.code, int) else 0)
+    except SystemExit as error:
+        raise SystemExit(error.code if isinstance(error.code, int) else 0)
 
 
 # ── Usage ──────────────────────────────────────────────────────────────────
@@ -813,7 +844,11 @@ def _cmd_connectors_list(refresh: bool = False) -> int:
 @click.option("-p", "--port", default=8080, type=int, help="Port number.")
 @click.option("--model", "default_model", default="auto", help="Default model.")
 @click.option("--log-level", default="info", help="Log level: debug, info, warning, error.")
-@click.option("--trace", is_flag=True, help="Enable trace mode (logs un-truncated payloads to ~/.config/perplexity-web-mcp/logs/api-trace.log).")
+@click.option(
+    "--trace",
+    is_flag=True,
+    help="Enable trace mode (logs un-truncated payloads to ~/.config/perplexity-web-mcp/logs/api-trace.log).",
+)
 def api(host, port, default_model, log_level, trace):
     """Start the Anthropic/OpenAI API-compatible server.
 
@@ -832,13 +867,13 @@ def api(host, port, default_model, log_level, trace):
     if trace:
         os.environ["PWM_TRACE"] = "1"
         from perplexity_web_mcp.trace import get_trace_log_path, reset_trace_log
+
         reset_trace_log()
         print(f"Trace mode enabled! Logging to {get_trace_log_path()}", file=sys.stderr)
 
     from perplexity_web_mcp.api import run_server
 
     run_server()
-
 
 
 # ── Hack ───────────────────────────────────────────────────────────────────

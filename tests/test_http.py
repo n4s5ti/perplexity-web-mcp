@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from perplexity_web_mcp.constants import SESSION_COOKIE_NAME
 from perplexity_web_mcp.exceptions import AuthenticationError, RateLimitError
 from perplexity_web_mcp.http import HTTPClient
 
@@ -21,6 +22,8 @@ class TestHTTPDiagnostics:
 
         assert client._session.headers["x-app-apiclient"] == "default"
         assert client._session.headers["x-app-apiversion"] == "2.18"
+        session_cookie = next(cookie for cookie in client._session.cookies.jar if cookie.name == SESSION_COOKIE_NAME)
+        assert session_cookie.secure is True
 
     def test_init_search_403_includes_endpoint_context(self) -> None:
         client = HTTPClient("token", requests_per_second=0, max_retries=0, rotate_fingerprint=False)

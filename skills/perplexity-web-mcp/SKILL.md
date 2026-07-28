@@ -323,6 +323,9 @@ pwm research "NVIDIA competitive landscape" -s finance --json
 ### Authentication
 
 ```bash
+pwm login --from-browser                                 # Import signed-in browser session
+pwm login --from-browser --browser firefox               # Select a browser explicitly
+pwm login --from-browser --browser chrome --cookie-file /path/to/Cookies
 pwm login                                                # Interactive
 pwm login --check                                        # Check status
 pwm login --email user@example.com                       # Send code
@@ -512,6 +515,14 @@ pwm login --check && pwm usage
 ```
 
 ### Re-authenticate (non-interactive, for AI agents)
+Prefer importing an existing browser session without exposing the token:
+
+```bash
+pwm login --from-browser
+```
+
+If browser import is unavailable, use email verification:
+
 
 ```bash
 pwm login --email user@example.com

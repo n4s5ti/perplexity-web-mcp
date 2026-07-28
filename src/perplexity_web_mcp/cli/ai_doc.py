@@ -27,6 +27,8 @@ CLI COMMANDS (pwm)
 
 AUTHENTICATION
   pwm login                           Interactive login (email + OTP code)
+  pwm login --from-browser            Import a signed-in browser session
+  pwm login --from-browser --browser firefox
   pwm login --check                   Check if authenticated (no login prompt)
   pwm login --email EMAIL             Send verification code (non-interactive)
   pwm login --email EMAIL --code CODE Complete auth with 6-digit code
@@ -247,17 +249,22 @@ AUTH TOOLS (3):
 AUTHENTICATION
 ================================================================================
 
-Three ways to authenticate (all store token at ~/.config/perplexity-web-mcp/token):
+Four ways to authenticate (all store token at ~/.config/perplexity-web-mcp/token):
 
-1. INTERACTIVE CLI (human at terminal):
+1. BROWSER SESSION (human already signed in):
+   pwm login --from-browser
+   pwm login --from-browser --browser firefox
+   pwm login --from-browser --browser chrome --cookie-file /path/to/Cookies
+
+2. INTERACTIVE CLI (human at terminal):
    pwm login
 
-2. NON-INTERACTIVE CLI (AI agent with shell access):
+3. NON-INTERACTIVE CLI (AI agent with shell access):
    pwm login --email user@example.com          # Sends code
    pwm login --email user@example.com --code 123456  # Completes auth
    pwm login --email user@example.com --code 123456 --totp-code 654321  # TOTP account
 
-3. MCP TOOLS (AI agent without shell):
+4. MCP TOOLS (AI agent without shell):
    pplx_auth_request_code(email="user@example.com")  # Sends code
    pplx_auth_complete(email="user@example.com", code="123456")  # Completes email OTP
    # If TOTP_REQUIRED is returned:

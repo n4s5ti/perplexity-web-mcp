@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from sys import exit
 from typing import NoReturn
 
@@ -17,11 +18,13 @@ from perplexity_web_mcp.auth import (
     create_auth_session,
     extract_session_token,
     follow_auth_callback,
+    perplexity_session_cookies,
     request_verification_code,
     resolve_redirect_url,
     verify_totp,
 )
-from perplexity_web_mcp.constants import API_BASE_URL, APP_HEADERS, SESSION_COOKIE_NAME
+from perplexity_web_mcp.browser_token import BrowserTokenError, load_browser_token
+from perplexity_web_mcp.constants import API_BASE_URL, APP_HEADERS
 from perplexity_web_mcp.token_store import load_token
 from perplexity_web_mcp.token_store import save_token as save_token_to_config
 
@@ -104,7 +107,7 @@ def get_user_info(token: str) -> UserInfo | None:
         with Session(
             impersonate="chrome",
             headers={**APP_HEADERS, "Referer": BASE_URL, "Origin": BASE_URL},
-            cookies={SESSION_COOKIE_NAME: token},
+            cookies=perplexity_session_cookies(token),
         ) as session:
             response = session.get(f"{BASE_URL}/api/user")
             if response.status_code == 200:
@@ -177,25 +180,48 @@ def _display_user_info(user_info: UserInfo) -> None:
     console.print(table)
 
 
-def _display_and_save_token(token: str) -> None:
-    """Display token, user info, and save to config directory."""
+def _display_and_save_token(token: str) -> bool:
+    """Validate an authenticated session, display account info, and save it."""
 
-    console.print("\n[bold green]Authentication successful![/bold green]\n")
-
-    # Fetch and display user info
     user_info = get_user_info(token)
-    if user_info:
-        _display_user_info(user_info)
-        console.print()
+    if not user_info:
+        console.print("[red]Authentication did not produce a valid Perplexity session. Please try again.[/red]")
+        return False
 
-    # Show token
-    console.print(f"[bold white]Session Token:[/bold white]\n[dim]{token[:50]}...{token[-20:]}[/dim]\n")
+    _display_user_info(user_info)
+    console.print()
 
-    # Save to config directory (~/.config/perplexity-web-mcp/token)
     if save_token_to_config(token):
         console.print("[green]Token saved to ~/.config/perplexity-web-mcp/token[/green]")
-    else:
-        console.print("[red]Failed to save token to config directory.[/red]")
+        return True
+
+    console.print("[red]Failed to save token to config directory.[/red]")
+    return False
+
+
+def import_browser_session(browser: str = "auto", cookie_file: Path | None = None, auto_save: bool = True) -> bool:
+    """Import, validate, and optionally save a Perplexity browser session."""
+    try:
+        token = load_browser_token(browser, cookie_file)
+    except BrowserTokenError as error:
+        console.print(f"[red]{error}[/red]")
+        return False
+
+    user_info = get_user_info(token)
+    if not user_info:
+        console.print("[red]The imported browser session is expired or invalid. Sign in again and retry.[/red]")
+        return False
+
+    console.print(f"Authenticated as: {user_info.email} ({user_info.tier_display})")
+    if not auto_save:
+        return True
+
+    if save_token_to_config(token):
+        console.print("[green]Token saved to ~/.config/perplexity-web-mcp/token[/green]")
+        return True
+
+    console.print("[red]Failed to save token to config directory.[/red]")
+    return False
 
 
 def _show_header() -> None:
@@ -258,19 +284,19 @@ def auth_non_interactive(
         redirect_url = _validate_and_get_redirect_url(session, email, code)
         token = _complete_auth_callback(session, redirect_url, totp_code)
 
-        # Verify token works
         user_info = get_user_info(token)
-        if user_info:
-            print(f"Authenticated as: {user_info.email} ({user_info.tier_display})")
+        if not user_info:
+            print("Error: Authentication did not produce a valid Perplexity session. Please try again.")
+            return None
 
+        print(f"Authenticated as: {user_info.email} ({user_info.tier_display})")
         if auto_save:
             if save_token_to_config(token):
                 print("Token saved to ~/.config/perplexity-web-mcp/token")
             else:
                 print("Warning: Failed to save token to config")
+                return None
 
-        # Output token for capture
-        print(f"TOKEN={token}")
         return token
 
     except Exception as e:
@@ -294,6 +320,7 @@ def main() -> NoReturn:
                 "  pwm-auth --check                      Check current auth status\n"
                 "  pwm-auth --email EMAIL                Send verification code to email\n"
                 "  pwm-auth --email EMAIL --code CODE    Complete auth with code\n"
+                "  pwm-auth --from-browser              Import an existing browser session\n"
                 "  pwm-auth --help                       Show this help message\n\n"
                 "[bold cyan]Options:[/bold cyan]\n"
                 "  --check          Check if authenticated without logging in\n"
@@ -301,6 +328,9 @@ def main() -> NoReturn:
                 "  --code CODE      6-digit verification code from email\n"
                 "  --totp-code CODE 6-digit code from your authenticator app\n"
                 "  --no-save        Don't save token to config (non-interactive only)\n"
+                "  --from-browser   Import the Perplexity session from a browser\n"
+                "  --browser NAME   Browser to import from (default: auto)\n"
+                "  --cookie-file PATH  Chromium-family cookie database\n"
                 "  -h, --help       Show this help message\n\n"
                 "[bold cyan]Token Storage:[/bold cyan]\n"
                 "  ~/.config/perplexity-web-mcp/token\n\n"
@@ -317,6 +347,26 @@ def main() -> NoReturn:
             )
         )
         exit(0)
+
+    if "--from-browser" in args:
+        browser = "auto"
+        if "--browser" in args:
+            browser_idx = args.index("--browser")
+            if browser_idx + 1 >= len(args):
+                print("Error: --browser requires a browser name")
+                exit(1)
+            browser = args[browser_idx + 1]
+
+        cookie_file = None
+        if "--cookie-file" in args:
+            cookie_file_idx = args.index("--cookie-file")
+            if cookie_file_idx + 1 >= len(args):
+                print("Error: --cookie-file requires a path")
+                exit(1)
+            cookie_file = Path(args[cookie_file_idx + 1])
+
+        result = import_browser_session(browser, cookie_file, auto_save="--no-save" not in args)
+        exit(0 if result else 1)
 
     if "--check" in args:
         # Check if already authenticated
@@ -379,7 +429,8 @@ def main() -> NoReturn:
             _prompt_and_verify_totp(session, challenge_token)
         token = extract_session_token(session)
 
-        _display_and_save_token(token)
+        if not _display_and_save_token(token):
+            exit(1)
 
         _show_exit_message()
 
